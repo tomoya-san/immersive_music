@@ -9,6 +9,12 @@ readme = "README.md"
 python = "3.12.7"
 mediapipe = "^0.10.18"
 opencv-python = "^4.10.0.84"
+pyaudio = "^0.2.14"
+pyav = "^13.1.0"
+librosa = "^0.10.2.post1"
+scipy = "^1.14.1"
+pysimplegui = "^5.0.7"
+tk = "^0.1.0"
 
 
 [build-system]
