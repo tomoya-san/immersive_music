@@ -17,6 +17,10 @@ POINTER_SIZE = (POINTER.shape[1], POINTER.shape[0])
 
 RADIUS = 30
 
+VOLUME_BAR_POS = (100, 100)
+
+TRIANGLE_SIZE = 200
+
 class Menu():
     def __init__(self, webcam, gestureRecognition):
         self.screenId = "select_music"
@@ -24,7 +28,24 @@ class Menu():
         self.gestureRecognition = gestureRecognition
         self.musicList = sorted(os.listdir(MUSIC_DIR))
         self.coverList = sorted(os.listdir(ALBUM_COVER_DIR))
-        self.hoverCount = {"posId": None, "count": 0}
+        self.musicHoverCount = {"posId": None, "count": 0}
+        self.pauseHoverCount = 0
+        self.quitHoverCount = 0
+    
+    def pausingMusic(self, frame):
+        darkenedFrame = np.clip(frame * 0.25, 0, 255).astype(np.uint8)
+        darkenedFrame = cv2.flip(darkenedFrame, 1)
+        width, height = int(self.webcam.frameSize[0]), int(self.webcam.frameSize[1])
+        centerX, centerY = width // 2, height // 2
+    
+        points = np.array([
+            [centerX - TRIANGLE_SIZE // 2, centerY - TRIANGLE_SIZE // 2],
+            [centerX - TRIANGLE_SIZE // 2, centerY + TRIANGLE_SIZE // 2],
+            [centerX + TRIANGLE_SIZE // 2, centerY],
+        ])
+
+        cv2.fillPoly(darkenedFrame, [points], (255, 255, 255)) 
+        return darkenedFrame
     
     def selectMusic(self, frame):
         darkenedFrame = np.clip(frame * 0.25, 0, 255).astype(np.uint8)
@@ -45,9 +66,76 @@ class Menu():
             y_offset += coverImage.shape[0]
 
         resultFrame = self.drawPointer(darkenedFrame)
-        resultFrame = self.drawCircularSector(darkenedFrame)
+        resultFrame = self.drawCircularSector(darkenedFrame, self.musicHoverCount["count"])
 
         return resultFrame
+    
+    def darkenSurrounding(self, frame):
+        hands = self.gestureRecognition
+        if hands.rightHand["gesture"] != None and hands.leftHand["gesture"] != None:
+            mask = np.zeros_like(frame, dtype=np.uint8)
+            rightX = int(hands.rightHand["posScaled"]["x"] * self.webcam.frameSize[0])
+            rightY = int(hands.rightHand["posScaled"]["y"] * self.webcam.frameSize[1])
+            leftX = int(hands.leftHand["posScaled"]["x"] * self.webcam.frameSize[0])
+            leftY = int(hands.leftHand["posScaled"]["y"] * self.webcam.frameSize[1])
+            roiCenter = (int((rightX + leftX) / 2), int((rightY + leftY) / 2))
+            decayFactor = 1 / abs(hands.rightHand["posScaled"]["x"] - hands.leftHand["posScaled"]["x"])
+
+            # Get the image dimensions
+            height, width = int(self.webcam.frameSize[1]), int(self.webcam.frameSize[0])
+        
+            # Create coordinate grid
+            Y, X = np.indices((height, width))
+            
+            # Calculate the distance from the center
+            distance = np.sqrt((X - roiCenter[0])**2 + (Y - roiCenter[1])**2)
+            
+            # Normalize the distance to the range [0, 1]
+            max_distance = np.max(distance)
+            distance_normalized = distance / max_distance
+            
+            # Create a mask with a decaying brightness based on the distance
+            mask = np.exp(-decayFactor * distance_normalized)
+            
+            # Convert the mask to 3 channels (for colored images)
+            mask = np.repeat(mask[:, :, np.newaxis], 3, axis=2)
+            
+            # Apply the mask to the image
+            result = frame * mask
+            
+            # Convert result to uint8
+            frame = np.clip(result, 0, 255).astype(np.uint8)
+        
+        return frame
+
+    def blurFrame(self, frame, reverb):
+        if reverb > 0.2:
+            ksize = int(60 * reverb)
+            ksize += (ksize + 1) % 2
+            blur_kernel = np.zeros((ksize, ksize))
+            for i in range(ksize):
+                blur_kernel[i, i] = 1.0
+            blur_kernel /= ksize
+            frame = cv2.filter2D(frame, ddepth=-1, kernel=blur_kernel)
+        return frame
+
+    def drawVolumeBar(self, frame, db):
+        volScaled = max(0, min(db / 80.0, 1))
+        bottomPosY = int(self.webcam.frameSize[1] - VOLUME_BAR_POS[1])
+        cv2.rectangle(frame, VOLUME_BAR_POS, (VOLUME_BAR_POS[0] + 100, bottomPosY), (169, 169, 169), -1)
+        
+        volLevel = max(int(bottomPosY + (VOLUME_BAR_POS[1] - bottomPosY) * volScaled), VOLUME_BAR_POS[1])
+        cv2.rectangle(frame, (VOLUME_BAR_POS[0], volLevel), (VOLUME_BAR_POS[0] + 100, bottomPosY), self.getVolumeColor(volScaled), -1)
+        return frame
+    
+    def getVolumeColor(self, t):
+        if t < 0.5:
+            red = int(255 * (2 * t))
+            green = 255
+        else:
+            red = 255
+            green = int(255 * (2 * (1 - t)))
+        return (0, green, red)
     
     def drawPointer(self, frame):
         hand = self.gestureRecognition.rightHand
@@ -62,49 +150,67 @@ class Menu():
         
         return frame
 
-    def drawCircularSector(self, frame):
-        if self.hoverCount["count"] > 0:
+    def drawCircularSector(self, frame, duration):
+        if duration > 0:
             hand = self.gestureRecognition.rightHand
             x = int(hand["tipPosScaled"]["x"] * self.webcam.frameSize[0])
             y = int(hand["tipPosScaled"]["y"] * self.webcam.frameSize[1])
-            endAngle = int(360 * self.hoverCount["count"] / HOVER_THRESH)
+            endAngle = int(360 * duration / HOVER_THRESH)
             cv2.ellipse(frame, (x, y), (RADIUS, RADIUS), 0, 0, endAngle, (255, 255, 255), 15)
         
         return frame
 
-    def checkHover(self):
+    def checkPauseHover(self):
+        hand = self.gestureRecognition.rightHand
+        if hand["gesture"] == "Pointing_Up":
+            self.pauseHoverCount += 1
+        else:
+            self.pauseHoverCount = 0
+        
+        return self.pauseHoverCount > HOVER_THRESH
+    
+    def checkQuitHover(self):
+        hand = self.gestureRecognition.rightHand
+        if hand["gesture"] == "Victory":
+            self.quitHoverCount += 1
+        else:
+            self.quitHoverCount = 0
+        
+        return self.quitHoverCount > HOVER_THRESH
+
+    def checkMusicHover(self):
         hand = self.gestureRecognition.rightHand
         if hand["gesture"] == "Pointing_Up":
             tipPosFrame = (int(hand["tipPosScaled"]["x"] * self.webcam.frameSize[0]), int(hand["tipPosScaled"]["y"] * self.webcam.frameSize[1]))
             if tipPosFrame[0] > self.webcam.frameSize[0] - COVER_SIZE - GAP_SIZE:
                 if tipPosFrame[1] < COVER_SIZE + GAP_SIZE:
-                    if self.hoverCount["posId"] == 0:
-                        self.hoverCount["count"] += 1
+                    if self.musicHoverCount["posId"] == 0:
+                        self.musicHoverCount["count"] += 1
                     else:
-                        self.hoverCount["posId"] = 0
-                        self.hoverCount["count"] = 0
+                        self.musicHoverCount["posId"] = 0
+                        self.musicHoverCount["count"] = 0
                 elif COVER_SIZE + GAP_SIZE*2 < tipPosFrame[1] and tipPosFrame[1] < COVER_SIZE*2 + GAP_SIZE*2:
-                    if self.hoverCount["posId"] == 1:
-                        self.hoverCount["count"] += 1
+                    if self.musicHoverCount["posId"] == 1:
+                        self.musicHoverCount["count"] += 1
                     else:
-                        self.hoverCount["posId"] = 1
-                        self.hoverCount["count"] = 0
+                        self.musicHoverCount["posId"] = 1
+                        self.musicHoverCount["count"] = 0
                 elif COVER_SIZE*2 + GAP_SIZE*3 < tipPosFrame[1] and tipPosFrame[1] < COVER_SIZE*3 + GAP_SIZE*4:
-                    if self.hoverCount["posId"] == 2:
-                        self.hoverCount["count"] += 1
+                    if self.musicHoverCount["posId"] == 2:
+                        self.musicHoverCount["count"] += 1
                     else:
-                        self.hoverCount["posId"] = 2
-                        self.hoverCount["count"] = 0
+                        self.musicHoverCount["posId"] = 2
+                        self.musicHoverCount["count"] = 0
             else:
-                self.hoverCount["posId"] = None
-                self.hoverCount["count"] = 0
+                self.musicHoverCount["posId"] = None
+                self.musicHoverCount["count"] = 0
         else:
-            self.hoverCount["posId"] = None
-            self.hoverCount["count"] = 0
+            self.musicHoverCount["posId"] = None
+            self.musicHoverCount["count"] = 0
 
 
-        if self.hoverCount["count"] > HOVER_THRESH:
-            musicFile = self.musicList[self.hoverCount["posId"]]
+        if self.musicHoverCount["count"] > HOVER_THRESH:
+            musicFile = self.musicList[self.musicHoverCount["posId"]]
             selectedMusic = os.path.join(MUSIC_DIR, musicFile)
         else:
             selectedMusic = None

@@ -31,8 +31,10 @@ def main():
         gestureRecognition.saveResult(result)
 
         if menu.screenId == "select_music":
-            cv2.imshow("webcam", menu.selectMusic(frame))
-            selectedMusic = menu.checkHover()
+            frame = menu.selectMusic(frame)
+            frame = menu.drawCircularSector(frame, menu.quitHoverCount)
+            cv2.imshow("webcam", frame)
+            selectedMusic = menu.checkMusicHover()
             if selectedMusic != None:
                 print(f"Selected: {selectedMusic}")
                 musicPlayer.setMusic(selectedMusic)
@@ -40,7 +42,13 @@ def main():
                 musicThread.start()
               
         elif menu.screenId == "playing":
-            cv2.imshow("webcam", cv2.flip(frame, 1))
+            frame = cv2.flip(frame, 1)
+            frame = menu.blurFrame(frame, musicPlayer.reverb.room_size)
+            frame = menu.darkenSurrounding(frame)
+            frame = menu.drawVolumeBar(frame, musicPlayer.db)
+            frame = menu.drawCircularSector(frame, menu.pauseHoverCount)
+            frame = menu.drawCircularSector(frame, menu.quitHoverCount)
+            cv2.imshow("webcam", frame)
             musicInteractor.hand2gain(gestureRecognition.rightHand)
             musicInteractor.hand2reverb(gestureRecognition.leftHand)
             musicInteractor.hand2filter(gestureRecognition.leftHand, gestureRecognition.rightHand)
@@ -49,26 +57,33 @@ def main():
             musicPlayer.setReverbRoomSize(musicInteractor.roomSize)
             musicPlayer.setBandPassFilter(musicInteractor.low, musicInteractor.high)
 
-        if cv2.waitKey(1) == ord('q'):
-            print("Closing webcam.")
+            if menu.checkPauseHover():
+                musicPlayer.paused = True
+                menu.screenId = "pausing"
+                menu.pauseHoverCount = 0
+
+        elif menu.screenId == "pausing":
+            frame = menu.pausingMusic(frame)
+            frame = menu.drawCircularSector(frame, menu.pauseHoverCount)
+            cv2.imshow("webcam", frame)
+
+            if menu.checkPauseHover():
+                musicPlayer.paused = False
+                menu.screenId = "playing"
+                menu.pauseHoverCount = 0
+
+        if menu.checkQuitHover():
+            print("Terminated.")
             break
+
+        if cv2.waitKey(1) == ord('q'):
+            print("Terminated")
+            break
+        
+
     
     webcam.terminate()
     cv2.destroyAllWindows()
-
-    """
-    while True:
-        user_input = input("Enter something (or 'exit' to quit): ")
-    
-        # musicPlayer.setReverbRoomSize(float(user_input))
-        # print(f"Room size: {user_input}")
-
-        # musicPlayer.setBandPassFilter(50, float(user_input))
-        # print(f"High cut: {user_input}")
-
-        musicPlayer.setGain(float(user_input))
-        print(f"Gain: {user_input}")
-    """
 
 if __name__ == "__main__":
     main()
