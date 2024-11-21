@@ -11,9 +11,9 @@ class MusicInteractor():
     
     def hand2reverb(self, hand):
         if hand["openness"] != None:
-            if hand["openness"] < 0.0:
+            if hand["openness"] < 0.1:
                 self.roomSize = 0.0
-            elif hand["openness"] > 1.0:
+            elif hand["openness"] > 0.9:
                 self.roomSize = 1.0
             else:
                 self.roomSize = hand["openness"]

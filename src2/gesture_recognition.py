@@ -17,8 +17,8 @@ class GestureRecognition():
     def __init__(self):
         self.options = None
         self.recognizer = None
-        self.rightHand = {"posScaled": None, "gesture": None, "openness": None}
-        self.leftHand = {"posScaled": None, "gesture": None, "openness": None}
+        self.rightHand = {"posScaled": None, "tipPosScaled": None, "gesture": None, "openness": None}
+        self.leftHand = {"posScaled": None, "tipPosScaled": None, "gesture": None, "openness": None}
 
     def initialize(self):
         self.options = GestureRecognizerOptions(
@@ -53,21 +53,31 @@ class GestureRecognition():
             zScaled = landmarks[9].z
             posScaled = {"x": xScaled, "y": yScaled, "z": zScaled}
 
+
+            xScaled = 1 - landmarks[8].x
+            yScaled = landmarks[8].y
+            zScaled = landmarks[8].z
+            tipPosScaled = {"x": xScaled, "y": yScaled, "z": zScaled}
+
             # how open the hand is (0 -> closed, 1 -> opened)
-            wrist = (landmarks[0].x, landmarks[0].y, landmarks[0].z)
-            middleMcp = (landmarks[9].x, landmarks[9].y, landmarks[9].z)
-            handSize = 1.38 * math.dist(wrist, middleMcp)
-            thumbTip = (landmarks[4].x, landmarks[4].y, landmarks[4].z)
-            pinkyTip = (landmarks[20].x, landmarks[20].y, landmarks[20].z)
-            handOpenness = math.dist(thumbTip, pinkyTip) / handSize
+            avgDist = 0.0
+            for i in range(5, 18, 4):
+                mcp = (landmarks[i].x, landmarks[i].y, landmarks[i].z)
+                tip = (landmarks[i+3].x, landmarks[i+3].y, landmarks[i+3].z)
+                avgDist += math.dist(mcp, tip)
+            avgDist /= 4
+            handOpenness = math.log2(avgDist * 100) / 2.0 - 1.2
+            #print(handOpenness)
+
 
             if handedness == "Right":
                 self.rightHand["posScaled"] = posScaled
+                self.rightHand["tipPosScaled"] = tipPosScaled
                 self.rightHand["gesture"] = gesture[0].category_name
                 self.rightHand["openness"] = handOpenness
 
-            
             elif handedness == "Left":
                 self.leftHand["posScaled"] = posScaled
+                self.rightHand["tipPosScaled"] = tipPosScaled
                 self.leftHand["gesture"] = gesture[0].category_name
                 self.leftHand["openness"] = handOpenness
