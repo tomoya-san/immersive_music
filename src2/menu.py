@@ -1,25 +1,40 @@
-from src2.gesture_recognition import GestureRecognition
-
 import cv2
 import numpy as np
 import os
 
+# for music selection
 MUSIC_DIR = "music"
 ALBUM_COVER_DIR = "album_cover"
 COVER_SIZE = 300
 GAP_SIZE = 25
-HOVER_THRESH = 20
 
+# for right pointing hand
 POINTER = cv2.imread('images/pointer.png', cv2.IMREAD_UNCHANGED)
 POINTER_ALPHA = POINTER[:, :, 3]
 POINTER = POINTER[:, :, :3]
 POINTER_SIZE = (POINTER.shape[1], POINTER.shape[0])
 
+# for hovering
+HOVER_THRESH = 20
 RADIUS = 30
 
-VOLUME_BAR_POS = (100, 100)
+# for volume bar
+VOLUME_BAR_POS = (100, 300)
 
+# for pausing screen
 TRIANGLE_SIZE = 200
+
+# for showing detected hands
+HAND_SIZE = (200, 200)
+RIGHT_HAND = cv2.imread("images/right_hand_open.png", cv2.IMREAD_UNCHANGED)
+LEFT_HAND = cv2.imread("images/left_hand_open.png", cv2.IMREAD_UNCHANGED)
+RIGHT_HAND = cv2.resize(RIGHT_HAND, HAND_SIZE)
+LEFT_HAND = cv2.resize(LEFT_HAND, HAND_SIZE)
+RIGHT_HAND_ALPHA = RIGHT_HAND[:, :, 3]
+RIGHT_HAND = RIGHT_HAND[:, :, :3]
+LEFT_HAND_ALPHA = LEFT_HAND[:, :, 3]
+LEFT_HAND = LEFT_HAND[:, :, :3]
+
 
 class Menu():
     def __init__(self, webcam, gestureRecognition):
@@ -32,29 +47,37 @@ class Menu():
         self.pauseHoverCount = 0
         self.quitHoverCount = 0
     
+    # returns a screen for the paused menu
     def pausingMusic(self, frame):
+        # darken the frame
         darkenedFrame = np.clip(frame * 0.25, 0, 255).astype(np.uint8)
         darkenedFrame = cv2.flip(darkenedFrame, 1)
+
+        # draw a restart icon
         width, height = int(self.webcam.frameSize[0]), int(self.webcam.frameSize[1])
         centerX, centerY = width // 2, height // 2
-    
         points = np.array([
             [centerX - TRIANGLE_SIZE // 2, centerY - TRIANGLE_SIZE // 2],
             [centerX - TRIANGLE_SIZE // 2, centerY + TRIANGLE_SIZE // 2],
             [centerX + TRIANGLE_SIZE // 2, centerY],
         ])
-
         cv2.fillPoly(darkenedFrame, [points], (255, 255, 255)) 
+
         return darkenedFrame
     
+    # returns a screen for the music selection menu
     def selectMusic(self, frame):
+        # darken the frame
         darkenedFrame = np.clip(frame * 0.25, 0, 255).astype(np.uint8)
         darkenedFrame = cv2.flip(darkenedFrame, 1)
+
+        # write text
         cv2.putText(darkenedFrame, "Select", (int(self.webcam.frameSize[0] / 10), int(self.webcam.frameSize[1] / 5)), cv2.FONT_HERSHEY_SIMPLEX, 5, (255, 255, 255), 10)
         cv2.putText(darkenedFrame, "Music", (int(self.webcam.frameSize[0] / 10), int(self.webcam.frameSize[1] / 5 * 2)), cv2.FONT_HERSHEY_SIMPLEX, 5, (255, 255, 255), 10)
         cv2.putText(darkenedFrame, "by", (int(self.webcam.frameSize[0] / 10), int(self.webcam.frameSize[1] / 5 * 3)), cv2.FONT_HERSHEY_SIMPLEX, 5, (255, 255, 255), 10)
         cv2.putText(darkenedFrame, "Pointing", (int(self.webcam.frameSize[0] / 10), int(self.webcam.frameSize[1] / 5 * 4)), cv2.FONT_HERSHEY_SIMPLEX, 5, (255, 255, 255), 10)
 
+        # draw music album covers
         x_offset = (darkenedFrame.shape[1] - COVER_SIZE) - GAP_SIZE
         y_offset = 0
 
@@ -65,11 +88,15 @@ class Menu():
             darkenedFrame[y_offset:y_offset + coverImage.shape[0], x_offset:x_offset + coverImage.shape[1]] = coverImage
             y_offset += coverImage.shape[0]
 
+        # draw pointing right hand
         resultFrame = self.drawPointer(darkenedFrame)
+
+        # draw hovering animation
         resultFrame = self.drawCircularSector(darkenedFrame, self.musicHoverCount["count"])
 
         return resultFrame
     
+    # darken the surrounding for band filter animation
     def darkenSurrounding(self, frame):
         hands = self.gestureRecognition
         if hands.rightHand["gesture"] != None and hands.leftHand["gesture"] != None:
@@ -108,6 +135,7 @@ class Menu():
         
         return frame
 
+    # blur the frame for reverb animation
     def blurFrame(self, frame, reverb):
         if reverb > 0.2:
             ksize = int(60 * reverb)
@@ -119,15 +147,17 @@ class Menu():
             frame = cv2.filter2D(frame, ddepth=-1, kernel=blur_kernel)
         return frame
 
+    # draw volume bar based on the decibel value
     def drawVolumeBar(self, frame, db):
         volScaled = max(0, min(db / 80.0, 1))
-        bottomPosY = int(self.webcam.frameSize[1] - VOLUME_BAR_POS[1])
+        bottomPosY = int(self.webcam.frameSize[1] - 100)
         cv2.rectangle(frame, VOLUME_BAR_POS, (VOLUME_BAR_POS[0] + 100, bottomPosY), (169, 169, 169), -1)
         
         volLevel = max(int(bottomPosY + (VOLUME_BAR_POS[1] - bottomPosY) * volScaled), VOLUME_BAR_POS[1])
         cv2.rectangle(frame, (VOLUME_BAR_POS[0], volLevel), (VOLUME_BAR_POS[0] + 100, bottomPosY), self.getVolumeColor(volScaled), -1)
         return frame
     
+    # change the color of the volume bar depending on the volume level
     def getVolumeColor(self, t):
         if t < 0.5:
             red = int(255 * (2 * t))
@@ -137,6 +167,28 @@ class Menu():
             green = int(255 * (2 * (1 - t)))
         return (0, green, red)
     
+    # draw icons for currently detected hands
+    def drawDetectedHands(self, frame):
+        rightHand = self.gestureRecognition.rightHand
+        leftHand = self.gestureRecognition.leftHand
+
+        if rightHand["gesture"] != None:
+            x = int(self.webcam.frameSize[0] - HAND_SIZE[0])
+            y = 0
+
+            for c in range(0, 3):
+                frame[y:y + HAND_SIZE[1], x:x + HAND_SIZE[0], c] = (RIGHT_HAND_ALPHA / 255.0) * RIGHT_HAND[:, :, c] + (1 - RIGHT_HAND_ALPHA / 255.0) * frame[y:y + HAND_SIZE[1], x:x + HAND_SIZE[0], c]
+
+        if leftHand["gesture"] != None:
+            x = 0
+            y = 0
+
+            for c in range(0, 3):
+                frame[y:y + HAND_SIZE[1], x:x + HAND_SIZE[0], c] = (LEFT_HAND_ALPHA / 255.0) * LEFT_HAND[:, :, c] + (1 - LEFT_HAND_ALPHA / 255.0) * frame[y:y + HAND_SIZE[1], x:x + HAND_SIZE[0], c]
+
+        return frame
+
+    # draw pointing right hand for cursor
     def drawPointer(self, frame):
         hand = self.gestureRecognition.rightHand
         if hand["gesture"] == "Pointing_Up":
@@ -150,6 +202,7 @@ class Menu():
         
         return frame
 
+    # draw hovering animation
     def drawCircularSector(self, frame, duration):
         if duration > 0:
             hand = self.gestureRecognition.rightHand
@@ -160,6 +213,7 @@ class Menu():
         
         return frame
 
+    # checks if hover duration is above threshold for pausing
     def checkPauseHover(self):
         hand = self.gestureRecognition.rightHand
         if hand["gesture"] == "Pointing_Up":
@@ -169,6 +223,7 @@ class Menu():
         
         return self.pauseHoverCount > HOVER_THRESH
     
+    # checks if hover duration is above threshold for quitting
     def checkQuitHover(self):
         hand = self.gestureRecognition.rightHand
         if hand["gesture"] == "Victory":
@@ -178,6 +233,7 @@ class Menu():
         
         return self.quitHoverCount > HOVER_THRESH
 
+    # checks if hover duration is above threshold for music selection
     def checkMusicHover(self):
         hand = self.gestureRecognition.rightHand
         if hand["gesture"] == "Pointing_Up":

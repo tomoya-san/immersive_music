@@ -6,7 +6,6 @@ from src2.menu import Menu
 
 import threading
 import cv2
-import numpy as np
 
 MUSIC_PATH = "music/gen_alpha.mp3"
 
@@ -48,6 +47,7 @@ def main():
             frame = menu.drawVolumeBar(frame, musicPlayer.db)
             frame = menu.drawCircularSector(frame, menu.pauseHoverCount)
             frame = menu.drawCircularSector(frame, menu.quitHoverCount)
+            frame = menu.drawDetectedHands(frame)
             cv2.imshow("webcam", frame)
             musicInteractor.hand2gain(gestureRecognition.rightHand)
             musicInteractor.hand2reverb(gestureRecognition.leftHand)
@@ -65,6 +65,7 @@ def main():
         elif menu.screenId == "pausing":
             frame = menu.pausingMusic(frame)
             frame = menu.drawCircularSector(frame, menu.pauseHoverCount)
+            frame = menu.drawDetectedHands(frame)
             cv2.imshow("webcam", frame)
 
             if menu.checkPauseHover():

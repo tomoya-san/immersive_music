@@ -6,6 +6,7 @@ class Webcam():
         self.frameSize = None
         self.frameRate = None
     
+    # call this before retrieving frames from the camera
     def initialize(self):
         self.cap = cv2.VideoCapture(1)
 
@@ -20,6 +21,7 @@ class Webcam():
         print(f"Frame Size: {self.frameSize}")
         print(f"Frame Rate: {self.frameRate}")
     
+    # retrieve frame from the camera
     def getFrame(self):
         if self.cap.isOpened():
             ret, frame = self.cap.read()
@@ -33,5 +35,6 @@ class Webcam():
         
         return frame
 
+    # call this when camera is not needed any more
     def terminate(self):
         self.cap.release()

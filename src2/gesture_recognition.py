@@ -1,16 +1,15 @@
 import math
 import time
-import cv2
 import mediapipe as mp
 
 from mediapipe.tasks.python import BaseOptions
 from mediapipe.tasks.python.vision import (
     GestureRecognizer,
     GestureRecognizerOptions,
-    GestureRecognizerResult,
     RunningMode,
 )
 
+# mediapipe pretrained model for gesture recognition
 MODEL_PATH = "models/gesture_recognizer.task"
 
 class GestureRecognition():
@@ -20,6 +19,7 @@ class GestureRecognition():
         self.rightHand = {"posScaled": None, "tipPosScaled": None, "gesture": None, "openness": None}
         self.leftHand = {"posScaled": None, "tipPosScaled": None, "gesture": None, "openness": None}
 
+    # call this after object instantiation
     def initialize(self):
         self.options = GestureRecognizerOptions(
             base_options = BaseOptions(model_asset_path=MODEL_PATH),
@@ -31,6 +31,7 @@ class GestureRecognition():
         )
         self.recognizer = GestureRecognizer.create_from_options(self.options)
 
+    # takes a frame and return the results of gesture recognition
     def recognize(self, frame):
         mpImage = mp.Image(image_format=mp.ImageFormat.SRGB, data=frame)
         timestamp = math.floor(time.time() * 1000)
@@ -38,22 +39,34 @@ class GestureRecognition():
         
         return result
 
+    # takes the results of gesture recognition and stores the information to properties
     def saveResult(self, result):
         gestureList = result.gestures
         landmarksList = result.hand_landmarks
         handednessList = result.handedness
+        
+        # check how many hands are currently detected
+        if len(handednessList) == 0:
+            self.rightHand["gesture"] = None
+            self.leftHand["gesture"] = None
+        elif len(handednessList) == 1:
+            if handednessList[0][0].category_name == "Right":
+                self.leftHand["gesture"] = None
+            elif handednessList[0][0].category_name == "Left":
+                self.rightHand["gesture"] = None
+
 
         for gesture, landmarks, handedness in zip(gestureList, landmarksList, handednessList):
             # right or left hand
             handedness = handedness[0].display_name
 
-            # scaled position of the hand 0.0 ~ 1.0 for x and y
+            # scaled position of the middle of the hand
             xScaled = 1 - landmarks[9].x
             yScaled = landmarks[9].y
             zScaled = landmarks[9].z
             posScaled = {"x": xScaled, "y": yScaled, "z": zScaled}
 
-
+            # scaled position of the tip of the index finger
             xScaled = 1 - landmarks[8].x
             yScaled = landmarks[8].y
             zScaled = landmarks[8].z
@@ -67,8 +80,6 @@ class GestureRecognition():
                 avgDist += math.dist(mcp, tip)
             avgDist /= 4
             handOpenness = math.log2(avgDist * 100) / 2.0 - 1.2
-            #print(handOpenness)
-
 
             if handedness == "Right":
                 self.rightHand["posScaled"] = posScaled

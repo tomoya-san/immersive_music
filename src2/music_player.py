@@ -1,5 +1,5 @@
 from pedalboard import Pedalboard, Reverb, LowpassFilter, HighpassFilter, Gain
-from pedalboard.io import AudioStream, AudioFile, ReadableAudioFile
+from pedalboard.io import AudioStream, ReadableAudioFile
 
 import numpy as np
 import time
@@ -34,16 +34,20 @@ class MusicPlayer():
         self.paused = False
         self.currentFrame = 0
         with AudioStream(output_device_name=AudioStream.default_output_device_name) as stream:
+            # check the sample rate of the output sound device
             print(f"Sound device operating at SR={stream.sample_rate}")
             with ReadableAudioFile(self.music) as file:
+                # make sure to resample music file for the specified output sound device
                 file = file.resampled_to(stream.sample_rate)
+
+                # if the music was paused, restart from the paused frame
                 file.seek(self.currentFrame)
 
                 while file.tell() < file.frames:
                     if self.paused:
                         time.sleep(0.01)
                         continue
-
+                    
                     audio_chunk = file.read(BUFFER_SIZE)
                     audio_chunk = self.pedalboard.process(audio_chunk, file.samplerate, reset=False)
                     self.getRMS(audio_chunk)
